@@ -3,8 +3,8 @@ import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "../src/services/geminiService";
-import type { UserProfile } from "../src/services/geminiService";
+import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "./services/geminiService";
+import type { UserProfile } from "./services/geminiService";
 
 dotenv.config();
 console.log("🔐 Loaded environment variables");
