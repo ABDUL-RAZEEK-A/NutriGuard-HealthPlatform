@@ -10,8 +10,8 @@ dotenv.config();
 console.log("🔐 Loaded environment variables");
 console.log("🚀 Starting NutriGuard Server...");
 
-// MongoDB connection
-const MONGODB_URI = process.env.MONGODB_URI;
+// MongoDB connection - Clean and sanitize the URI
+const MONGODB_URI = process.env.MONGODB_URI?.trim().replace(/^["']|["']$/g, '');
 
 if (!MONGODB_URI) {
   console.error("❌ MONGODB_URI not found in environment variables. Database connection will fail.");
