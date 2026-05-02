@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs";
@@ -441,8 +440,9 @@ async function setupApp(app: express.Express) {
   console.log("   💧 Water: GET/POST/DELETE /api/water");
   console.log("   💊 Medications: GET/POST/PUT/DELETE /api/medications");
   // Vite middleware for development
-  if (process.env.NODE_ENV !== "production") {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
     console.log("🔧 Setting up Vite development server...");
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: "spa",
