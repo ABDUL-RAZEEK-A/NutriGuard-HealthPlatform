@@ -69,9 +69,11 @@ async function generateContentWithFallback(params: any) {
       // Map futuristic model names to current ones
       if (requestedModel.includes('gemini-3') || requestedModel.includes('2.0')) {
         modelToUse = 'gemini-2.0-flash';
+      } else if (requestedModel.includes('flash')) {
+        modelToUse = 'gemini-1.5-flash';
       }
       
-      const tryModels = [modelToUse, 'gemini-flash-latest', 'gemini-1.5-pro'];
+      const tryModels = [modelToUse, 'gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-1.5-pro'];
       
       for (let i = 0; i < tryModels.length; i++) {
         const currentModel = tryModels[i];
