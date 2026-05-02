@@ -3,26 +3,35 @@ import { connectToMongoDB, Profile, Meal } from "../../api/lib/db";
 import { getPersonalizedRecommendations } from "../../api/services/geminiService";
 
 export const handler: Handler = async (event) => {
+  console.log("METHOD:", event.httpMethod);
+
+  if (event.httpMethod !== "GET") {
+    return {
+      statusCode: 405,
+      body: JSON.stringify({ error: "Method not allowed" })
+    };
+  }
+
   try {
     await connectToMongoDB();
 
-    if (event.httpMethod === "GET") {
-      const profile = await Profile.findOne().sort({ _id: -1 });
-      if (!profile) {
-        return { statusCode: 400, body: JSON.stringify({ error: "Profile required" }) };
-      }
-
-      const pastMeals = await Meal.find().sort({ timestamp: -1 }).limit(10);
-      const recommendations = await getPersonalizedRecommendations(profile as any, pastMeals);
-      
-      return {
-        statusCode: 200,
+    const profile = await Profile.findOne().sort({ _id: -1 });
+    if (!profile) {
+      return { 
+        statusCode: 200, 
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(recommendations),
+        body: JSON.stringify([]) // Return empty array if no profile
       };
     }
 
-    return { statusCode: 405, body: "Method Not Allowed" };
+    const pastMeals = await Meal.find().sort({ timestamp: -1 }).limit(10);
+    const recommendations = await getPersonalizedRecommendations(profile as any, pastMeals);
+    
+    return {
+      statusCode: 200,
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(recommendations),
+    };
   } catch (error: any) {
     console.error("Recommendations error:", error);
     return {

@@ -1,8 +1,10 @@
 import { Handler } from "@netlify/functions";
-import { connectToMongoDB, Meal, Profile } from "../../api/lib/db";
-import { analyzeMeal } from "../../api/services/geminiService";
+import { connectToMongoDB, Meal } from "../../api/lib/db";
 
 export const handler: Handler = async (event) => {
+  console.log("METHOD:", event.httpMethod);
+  console.log("BODY:", event.body);
+
   try {
     await connectToMongoDB();
 
@@ -16,42 +18,44 @@ export const handler: Handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-      const { text, image, mimeType } = JSON.parse(event.body || "{}");
-      
-      const profile = await Profile.findOne().sort({ _id: -1 });
-      if (!profile) {
-        return { statusCode: 400, body: JSON.stringify({ error: "Please complete your profile first" }) };
+      const data = event.body ? JSON.parse(event.body) : {};
+      if (!data || Object.keys(data).length === 0) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: "Invalid meal data" })
+        };
       }
 
-      const analysis = await analyzeMeal(profile as any, { text, imageBase64: image, mimeType });
-
-      const meal = new Meal({
-        meal_items: analysis.recognized_meal_items,
-        calories: analysis.nutritional_breakdown.total_calories,
-        proteins: analysis.nutritional_breakdown.proteins_g,
-        carbs: analysis.nutritional_breakdown.carbs_g,
-        fats: analysis.nutritional_breakdown.fats_g,
-        expense: analysis.estimated_expense || 0,
-        alerts: analysis.disease_rule_alerts,
-        insights: analysis.progress_insights,
-      });
-
+      const meal = new Meal(data);
       await meal.save();
+      
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(meal),
+        body: JSON.stringify({ 
+          message: "Meal saved successfully",
+          meal 
+        }),
       };
     }
 
     if (event.httpMethod === "DELETE") {
-      const { id } = event.queryStringParameters || {};
-      if (!id) return { statusCode: 400, body: "ID required" };
+      const id = event.path.split("/").pop();
+      if (!id || id === "meals") {
+        return { statusCode: 400, body: JSON.stringify({ error: "ID required" }) };
+      }
+      
       await (Meal as any).deleteOne({ _id: id });
-      return { statusCode: 200, body: JSON.stringify({ success: true }) };
+      return { 
+        statusCode: 200, 
+        body: JSON.stringify({ message: "Meal deleted successfully" }) 
+      };
     }
 
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return { 
+      statusCode: 405, 
+      body: JSON.stringify({ error: "Method not allowed" }) 
+    };
   } catch (error: any) {
     console.error("Meals error:", error);
     return {

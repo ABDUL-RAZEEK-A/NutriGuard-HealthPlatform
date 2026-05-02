@@ -1,6 +1,6 @@
 import { Handler } from "@netlify/functions";
 import { connectToMongoDB, Profile } from "../../api/lib/db";
-import { chatWithNutritionist } from "../../api/services/geminiService";
+import { analyzeMeal } from "../../api/services/geminiService";
 
 export const handler: Handler = async (event) => {
   console.log("METHOD:", event.httpMethod);
@@ -15,30 +15,34 @@ export const handler: Handler = async (event) => {
 
   try {
     await connectToMongoDB();
-
+    
     const data = event.body ? JSON.parse(event.body) : {};
-    if (!data || !data.message) {
+    if (!data || Object.keys(data).length === 0) {
       return {
         statusCode: 400,
-        body: JSON.stringify({ error: "Message is required" })
+        body: JSON.stringify({ error: "Invalid input" })
       };
     }
 
-    const { message, history } = data;
+    const { text, imageBase64, mimeType } = data;
     
     const profile = await Profile.findOne().sort({ _id: -1 });
     if (!profile) {
-      return { statusCode: 400, body: JSON.stringify({ error: "Profile required for chat" }) };
+      return { 
+        statusCode: 400, 
+        body: JSON.stringify({ error: "Please complete your profile first" }) 
+      };
     }
 
-    const response = await chatWithNutritionist(profile as any, history || [], message);
+    const analysis = await analyzeMeal(profile as any, { text, imageBase64, mimeType });
+
     return {
       statusCode: 200,
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ response }),
+      body: JSON.stringify(analysis),
     };
   } catch (error: any) {
-    console.error("Chat error:", error);
+    console.error("Analysis error:", error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message }),

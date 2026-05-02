@@ -3,6 +3,8 @@ import { connectToMongoDB } from "../../api/lib/db";
 import mongoose from "mongoose";
 
 export const handler: Handler = async (event, context) => {
+  console.log("METHOD:", event.httpMethod);
+
   try {
     await connectToMongoDB();
     return {
@@ -19,6 +21,7 @@ export const handler: Handler = async (event, context) => {
       }),
     };
   } catch (error: any) {
+    console.error("Health error:", error);
     return {
       statusCode: 500,
       body: JSON.stringify({ error: error.message }),

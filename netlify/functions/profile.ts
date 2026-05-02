@@ -2,6 +2,9 @@ import { Handler } from "@netlify/functions";
 import { connectToMongoDB, Profile } from "../../api/lib/db";
 
 export const handler: Handler = async (event) => {
+  console.log("METHOD:", event.httpMethod);
+  console.log("BODY:", event.body);
+
   try {
     await connectToMongoDB();
 
@@ -15,7 +18,14 @@ export const handler: Handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-      const data = JSON.parse(event.body || "{}");
+      const data = event.body ? JSON.parse(event.body) : {};
+      if (!data || Object.keys(data).length === 0) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: "Invalid profile data" })
+        };
+      }
+
       const profile = await Profile.findOneAndUpdate(
         {},
         { ...data, updatedAt: new Date() },
@@ -28,7 +38,10 @@ export const handler: Handler = async (event) => {
       };
     }
 
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return { 
+      statusCode: 405, 
+      body: JSON.stringify({ error: "Method not allowed" }) 
+    };
   } catch (error: any) {
     console.error("Profile error:", error);
     return {

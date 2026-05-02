@@ -2,6 +2,9 @@ import { Handler } from "@netlify/functions";
 import { connectToMongoDB, WaterLog } from "../../api/lib/db";
 
 export const handler: Handler = async (event) => {
+  console.log("METHOD:", event.httpMethod);
+  console.log("BODY:", event.body);
+
   try {
     await connectToMongoDB();
 
@@ -15,24 +18,45 @@ export const handler: Handler = async (event) => {
     }
 
     if (event.httpMethod === "POST") {
-      const { amount } = JSON.parse(event.body || "{}");
-      const log = new WaterLog({ amount });
+      const data = event.body ? JSON.parse(event.body) : {};
+      if (!data || (!data.amount && !data.amount_ml)) {
+        return {
+          statusCode: 400,
+          body: JSON.stringify({ error: "Amount is required" })
+        };
+      }
+
+      const log = new WaterLog({ 
+        amount: data.amount || data.amount_ml 
+      });
       await log.save();
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(log),
+        body: JSON.stringify({
+          message: "Water logged successfully",
+          log
+        }),
       };
     }
 
     if (event.httpMethod === "DELETE") {
-      const { id } = event.queryStringParameters || {};
-      if (!id) return { statusCode: 400, body: "ID required" };
+      const id = event.queryStringParameters?.id || event.path.split("/").pop();
+      if (!id || id === "water") {
+        return { statusCode: 400, body: JSON.stringify({ error: "ID required" }) };
+      }
+      
       await (WaterLog as any).deleteOne({ _id: id });
-      return { statusCode: 200, body: JSON.stringify({ success: true }) };
+      return { 
+        statusCode: 200, 
+        body: JSON.stringify({ message: "Water log deleted" }) 
+      };
     }
 
-    return { statusCode: 405, body: "Method Not Allowed" };
+    return { 
+      statusCode: 405, 
+      body: JSON.stringify({ error: "Method not allowed" }) 
+    };
   } catch (error: any) {
     console.error("Water error:", error);
     return {
