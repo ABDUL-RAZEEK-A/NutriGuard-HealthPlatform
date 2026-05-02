@@ -3,12 +3,14 @@ import { GoogleGenAI, Type } from "@google/genai";
 // API keys should be provided via environment variables (.env)
 function getApiKeys(): string[] {
   // First try to get from environment variables
+  const sanitize = (k: string) => k.trim().replace(/^["']|["']$/g, '').replace(/;$/, '');
+  
   const envKeys = process.env.GEMINI_API_KEYS 
-    ? process.env.GEMINI_API_KEYS.split(/[,;\s]+/).map(k => k.trim()).filter(Boolean)
+    ? process.env.GEMINI_API_KEYS.split(/[,;\s]+/).map(sanitize).filter(Boolean)
     : [];
   
   const singleEnvKey = process.env.GEMINI_API_KEY 
-    ? [process.env.GEMINI_API_KEY.trim()] 
+    ? [sanitize(process.env.GEMINI_API_KEY)] 
     : [];
 
   const uniqueKeys = Array.from(new Set([...envKeys, ...singleEnvKey]));
