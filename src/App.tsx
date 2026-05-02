@@ -58,7 +58,7 @@ import {
   Line
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
-import type { UserProfile, MealAnalysis, Recommendation } from './services/geminiService';
+import type { UserProfile, MealAnalysis, Recommendation } from '../api/services/groqService';
 import { cn } from './lib/utils';
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
@@ -929,7 +929,7 @@ export default function App() {
   }, [selectedDate, waterByDate]);
 
   const dailyWaterTotal = useMemo(() => {
-    return selectedDateWater.reduce((sum, log) => sum + log.amount_ml, 0);
+    return selectedDateWater.reduce((sum, log) => sum + (Number(log.amount_ml) || 0), 0);
   }, [selectedDateWater]);
 
   const dailyStats = useMemo(() => {
@@ -1140,12 +1140,12 @@ export default function App() {
                                 strokeWidth="8"
                                 strokeDasharray="100 100"
                                 initial={{ strokeDashoffset: 100 }}
-                                animate={{ strokeDashoffset: 100 - Math.min((waterLogs.reduce((s, l) => s + l.amount_ml, 0) / 3000) * 100, 100) }}
+                                animate={{ strokeDashoffset: 100 - Math.min(((Number(dailyWaterTotal) || 0) / 3000) * 100, 100) }}
                                 strokeLinecap="round"
                               />
                             </svg>
                             <div className="absolute inset-0 flex flex-col items-center justify-center">
-                              <span className="text-lg md:text-xl font-bold">{(waterLogs.reduce((s, l) => s + l.amount_ml, 0) / 1000).toFixed(1)}</span>
+                              <span className="text-lg md:text-xl font-bold">{((Number(dailyWaterTotal) || 0) / 1000).toFixed(1)}</span>
                               <span className="text-[8px] text-zinc-400 font-bold uppercase">Liters</span>
                             </div>
                           </div>

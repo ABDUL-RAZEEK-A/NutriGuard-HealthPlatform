@@ -4,7 +4,7 @@
 
 # NutriGuard - Disease-Aware Smart Nutrition Application
 
-A comprehensive, AI-powered nutrition tracking and health management web application that provides personalized dietary recommendations based on disease-specific health conditions. NutriGuard uses Google's Gemini AI to analyze meals from images or text descriptions, calculate nutritional breakdowns, and provide actionable health insights tailored to individual medical profiles.
+A comprehensive, AI-powered nutrition tracking and health management web application that provides personalized dietary recommendations based on disease-specific health conditions. NutriGuard uses Groq's Llama 3 models to analyze meals from images or text descriptions, calculate nutritional breakdowns, and provide actionable health insights tailored to individual medical profiles.
 
 **Live Demo:** View your app in AI Studio: https://ai.studio/apps/970dcde5-abaf-4f18-a73b-eab0300276ed
 
@@ -86,12 +86,11 @@ A comprehensive, AI-powered nutrition tracking and health management web applica
 - **MongoDB** - MongoDB Atlas cloud database (connection string provided)
 - **Disk Space** - At least 500MB for node_modules
 
-### API Keys & Services
-- **Gemini API Key** - Free tier available at [Google AI Studio](https://aistudio.google.com/)
-  - Visit https://aistudio.google.com/
-  - Click "Get API Key"
-  - Create a new project or use existing
-  - Copy the API key and keep it safe
+- **Groq API Key** - Get your API key at [Groq Console](https://console.groq.com/)
+  - Visit https://console.groq.com/
+  - Create an account or sign in
+  - Go to "API Keys" section
+  - Generate a new API key
 
 ### Recommended Tools
 - **Git** - For version control
@@ -129,7 +128,7 @@ This installs all required packages including:
 Create a `.env` file in the root directory:
 ```bash
 # .env
-GEMINI_API_KEY=your_actual_api_key_from_google_ai_studio
+GROQ_API_KEY=your_actual_api_key_from_groq_console
 APP_URL=http://localhost:3000
 ```
 
@@ -211,8 +210,8 @@ Abdul/
 │   ├── lib/
 │   │   └── utils.ts              # Utility functions (cn helper, etc.)
 │   └── services/
-│       └── geminiService.ts      # Gemini AI integration
-│           ├── analyzeMeal()     # Meal analysis with AI
+│       └── aiService.ts          # Groq AI integration
+│           ├── analyzeMeal()     # Meal analysis with Groq (Vision supported)
 │           ├── getRecommendations() # Personalized recommendations
 │           └── chatWithNutritionist() # Chatbot functionality
 │
@@ -276,11 +275,11 @@ Abdul/
 | **Node.js** | 18+ | Runtime environment |
 | **tsx** | 4.21.0 | TypeScript executor |
 
-### AI & APIs
 | Service | Purpose |
 |---------|---------|
-| **Google Gemini API** | Meal analysis & recommendations |
-| **gemini-3-flash** | Fast, efficient model |
+| **Groq API** | Meal analysis & recommendations |
+| **llama-3.3-70b-versatile** | High-performance text analysis |
+| **llama-3.2-90b-vision-preview** | Advanced food image recognition |
 
 ### Development Tools
 | Tool | Purpose |
@@ -442,7 +441,7 @@ The AI analyzes meal images or descriptions to provide:
 - **Historical Data**: Review weekly/monthly water intake
 
 ### 6. Nutritionist Chatbot
-- **AI-Powered Responses**: Gemini-based dietary advice
+- **AI-Powered Responses**: Groq-based dietary advice
 - **Context Aware**: Considers user profile and meal history
 - **Concise Answers**: 50 words maximum for quick reference
 - **Real-time Chat**: Instant responses to dietary questions
@@ -793,8 +792,8 @@ All endpoints that accept `:id` parameters validate the ID format before databas
 
 ### Environment Variables (.env)
 ```bash
-# Required - Your Gemini API key
-GEMINI_API_KEY=your_key_here
+# Required - Your Groq API key
+GROQ_API_KEY=your_key_here
 
 # Optional - Deployment URL
 APP_URL=http://localhost:3000

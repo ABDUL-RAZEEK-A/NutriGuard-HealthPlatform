@@ -1,4 +1,4 @@
-import { getPersonalizedRecommendations } from "../src/services/geminiService";
+import { getPersonalizedRecommendations } from "../api/services/geminiService";
 import dotenv from "dotenv";
 
 dotenv.config();

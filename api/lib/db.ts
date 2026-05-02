@@ -1,24 +1,39 @@
 import mongoose, { Types } from "mongoose";
+import dotenv from "dotenv";
+
+dotenv.config();
+
+// 4. Disable Silent Buffering
+mongoose.set("bufferCommands", false);
 
 // MongoDB connection - Clean and sanitize the URI (handles quotes and trailing semicolons)
 const MONGODB_URI = process.env.MONGODB_URI?.trim().replace(/^["']|["']$/g, '').replace(/;$/, '');
 
+// 2. Enforce Fail-Fast Strategy
+if (!MONGODB_URI) {
+  console.error("❌ MONGODB_URI missing from environment variables. Server cannot start.");
+  process.exit(1);
+}
+
 let isConnected = false;
 
+// 3. Fix MongoDB Connection Logic
 export async function connectToMongoDB() {
-  if (isConnected) return;
-  if (!MONGODB_URI) {
-    throw new Error("MONGODB_URI is missing from environment variables");
-  }
+  if (isConnected && mongoose.connection.readyState === 1) return;
+  
   try {
     await mongoose.connect(MONGODB_URI, {
       serverSelectionTimeoutMS: 5000,
       socketTimeoutMS: 45000,
     });
     isConnected = true;
-    console.log("📊 Connected to MongoDB");
+    console.log("✅ MongoDB Connected");
   } catch (err) {
-    console.error("❌ MongoDB connection error:", err);
+    console.error("❌ MongoDB Connection Failed:", err);
+    // Don't exit in serverless (Netlify/Vercel) as it might recover, but for local/standalone we exit
+    if (!process.env.NETLIFY && !process.env.VERCEL) {
+      process.exit(1);
+    }
     throw err;
   }
 }
@@ -49,16 +64,15 @@ export interface IMeal {
 
 export interface IWaterLog {
   timestamp: Date;
-  amount: number;
+  amount_ml: number;
 }
 
 export interface IMedication {
   name: string;
   dosage: string;
-  frequency: string;
-  timing: string;
+  time: string;
   taken: boolean;
-  lastTakenDate?: Date;
+  last_taken_date?: string;
 }
 
 // Define schemas
@@ -90,20 +104,22 @@ const mealSchema = new mongoose.Schema({
 
 const waterLogSchema = new mongoose.Schema({
   timestamp: { type: Date, default: Date.now },
-  amount: { type: Number, required: true }, // in ml
+  amount_ml: { type: Number, required: true }, // renamed from amount to match index.ts
 });
 
 const medicationSchema = new mongoose.Schema({
   name: { type: String, required: true },
-  dosage: { type: String, required: true },
-  frequency: { type: String, required: true },
-  timing: { type: String, required: true }, // e.g., "Before Breakfast"
+  dosage: { type: String },
+  time: { type: String, required: true }, // e.g., "08:00"
   taken: { type: Boolean, default: false },
-  lastTakenDate: { type: Date },
+  last_taken_date: { type: String },
 });
 
 // Create models
-export const Profile = mongoose.models.Profile || mongoose.model<IProfile>("Profile", profileSchema);
-export const Meal = mongoose.models.Meal || mongoose.model<IMeal>("Meal", mealSchema);
-export const WaterLog = mongoose.models.WaterLog || mongoose.model<IWaterLog>("WaterLog", waterLogSchema);
-export const Medication = mongoose.models.Medication || mongoose.model<IMedication>("Medication", medicationSchema);
+export const Profile: mongoose.Model<IProfile> = mongoose.models.Profile || mongoose.model<IProfile>("Profile", profileSchema);
+export const Meal: mongoose.Model<IMeal> = mongoose.models.Meal || mongoose.model<IMeal>("Meal", mealSchema);
+export const WaterLog: mongoose.Model<IWaterLog> = mongoose.models.WaterLog || mongoose.model<IWaterLog>("WaterLog", waterLogSchema);
+export const Medication: mongoose.Model<IMedication> = mongoose.models.Medication || mongoose.model<IMedication>("Medication", medicationSchema);
+
+export { isConnected };
+

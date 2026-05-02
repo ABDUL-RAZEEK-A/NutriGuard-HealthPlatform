@@ -1,88 +1,18 @@
 import express from "express";
-import mongoose, { Types } from "mongoose";
+import mongoose from "mongoose";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "./services/geminiService";
-import type { UserProfile } from "./services/geminiService";
+import { connectToMongoDB, isConnected, Profile, Meal, WaterLog, Medication } from "./lib/db";
+import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "./services/groqService";
+import type { UserProfile } from "./services/groqService";
 
 dotenv.config();
 console.log("🔐 Loaded environment variables");
 console.log("🚀 Starting NutriGuard Server...");
 
-// MongoDB connection - Clean and sanitize the URI (handles quotes and trailing semicolons)
-const MONGODB_URI = process.env.MONGODB_URI?.trim().replace(/^["']|["']$/g, '').replace(/;$/, '');
-
-if (!MONGODB_URI) {
-  console.error("❌ MONGODB_URI not found in environment variables. Database connection will fail.");
-}
-
-let isConnected = false;
-async function connectToMongoDB() {
-  if (isConnected) return;
-  if (!MONGODB_URI) {
-    console.error("❌ MONGODB_URI is missing. Cannot connect to database.");
-    return;
-  }
-  try {
-    await mongoose.connect(MONGODB_URI, {
-      serverSelectionTimeoutMS: 5000,
-      socketTimeoutMS: 45000,
-    });
-    isConnected = true;
-    console.log("📊 Connected to MongoDB");
-  } catch (err) {
-    console.error("❌ MongoDB connection error:", err);
-    // Don't exit in serverless, just log and let the next request try
-    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL && !process.env.NETLIFY) {
-      process.exit(1);
-    }
-  }
-}
-
-// Define schemas
-const profileSchema = new mongoose.Schema({
-  name: String,
-  age: Number,
-  weight: Number,
-  height: Number,
-  bmi: Number,
-  conditions: String,
-  goals: String
-});
-
-const mealLogSchema = new mongoose.Schema({
-  timestamp: { type: Date, default: Date.now },
-  meal_items: [mongoose.Schema.Types.Mixed],
-  calories: Number,
-  proteins: Number,
-  carbs: Number,
-  fats: Number,
-  alerts: [mongoose.Schema.Types.Mixed],
-  insights: [mongoose.Schema.Types.Mixed],
-  expense: { type: Number, default: 0 }
-});
-
-const waterLogSchema = new mongoose.Schema({
-  timestamp: { type: Date, default: Date.now },
-  amount_ml: Number
-});
-
-const medicationSchema = new mongoose.Schema({
-  name: { type: String, required: true },
-  dosage: String,
-  time: { type: String, required: true },
-  taken: { type: Boolean, default: false },
-  last_taken_date: String
-});
-
-// Create models
-const Profile = mongoose.model('Profile', profileSchema);
-const MealLog = mongoose.model('MealLog', mealLogSchema);
-const WaterLog = mongoose.model('WaterLog', waterLogSchema);
-const Medication = mongoose.model('Medication', medicationSchema);
-
-console.log("📋 Database models initialized");
+// Remove local models, use imported ones
+console.log("📋 Database models initialized from shared library");
 
 const app = express();
 
@@ -101,7 +31,7 @@ function validateObjectId(paramName: string) {
     if (!id || typeof id !== 'string' || id.trim() === '') {
       return res.status(400).json({ error: `${paramName} is required and must be a non-empty string` });
     }
-    if (!Types.ObjectId.isValid(id)) {
+    if (!mongoose.Types.ObjectId.isValid(id)) {
       return res.status(400).json({ error: `${paramName} must be a valid MongoDB ObjectId (24-character hex string)` });
     }
     next();
@@ -109,6 +39,9 @@ function validateObjectId(paramName: string) {
 }
 
 async function setupApp(app: express.Express) {
+  // Ensure DB is connected before proceeding
+  await connectToMongoDB();
+
   const PORT = Number(process.env.PORT) || 3000;
 
   console.log("-----------------------------------------");
@@ -127,11 +60,12 @@ async function setupApp(app: express.Express) {
   app.get("/api/health", (req, res) => {
     res.json({ 
       status: "ok", 
-      database: isConnected ? "connected" : "disconnected",
+      database: mongoose.connection.readyState === 1 ? "connected" : "disconnected",
       env: {
         has_mongodb_uri: !!process.env.MONGODB_URI,
-        has_gemini_key: !!process.env.GEMINI_API_KEY,
-        node_env: process.env.NODE_ENV
+        has_groq_key: !!process.env.GROQ_API_KEY,
+        node_env: process.env.NODE_ENV,
+        is_netlify: !!process.env.NETLIFY
       }
     });
   });
@@ -140,9 +74,12 @@ async function setupApp(app: express.Express) {
     try {
       const profile = await Profile.findOne().sort({ _id: -1 });
       res.json(profile || null);
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Error fetching profile:", error);
-      res.status(500).json({ error: "Failed to fetch profile" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -152,26 +89,32 @@ async function setupApp(app: express.Express) {
       const profile = new Profile({ name, age, weight, height, bmi, conditions, goals });
       await profile.save();
       res.json({ id: profile._id });
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Error saving profile:", error);
-      res.status(500).json({ error: "Failed to save profile" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
   app.get("/api/meals", async (req, res) => {
     try {
-      const meals = await MealLog.find().sort({ timestamp: -1 });
+      const meals = await Meal.find().sort({ timestamp: -1 });
       res.json(meals);
-    } catch (error) {
+    } catch (error: any) {
       console.error("❌ Error fetching meals:", error);
-      res.status(500).json({ error: "Failed to fetch meals" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
   app.post("/api/meals", async (req, res) => {
     try {
       const { meal_items, calories, proteins, carbs, fats, alerts, insights, expense, timestamp } = req.body;
-      const mealLog = new MealLog({
+      const mealLog = new Meal({
         meal_items,
         calories,
         proteins,
@@ -184,9 +127,12 @@ async function setupApp(app: express.Express) {
       });
       await mealLog.save();
       res.json({ id: mealLog._id });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving meal:", error);
-      res.status(500).json({ error: "Failed to save meal" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -194,7 +140,7 @@ async function setupApp(app: express.Express) {
     try {
       const { id } = req.params;
       const { meal_items, calories, proteins, carbs, fats, alerts, insights, expense } = req.body;
-      await MealLog.findByIdAndUpdate(id, {
+      await Meal.findByIdAndUpdate(id, {
         meal_items,
         calories,
         proteins,
@@ -203,22 +149,28 @@ async function setupApp(app: express.Express) {
         alerts,
         insights,
         expense: expense || 0
-      });
+      }, {});
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating meal:", error);
-      res.status(500).json({ error: "Failed to update meal" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
   app.delete("/api/meals/:id", validateObjectId('id'), async (req, res) => {
     try {
       const { id } = req.params;
-      await MealLog.findByIdAndDelete(id);
+      await Meal.findByIdAndDelete(id);
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting meal:", error);
-      res.status(500).json({ error: "Failed to delete meal" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -226,9 +178,12 @@ async function setupApp(app: express.Express) {
     try {
       const logs = await WaterLog.find().sort({ timestamp: -1 });
       res.json(logs);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching water logs:", error);
-      res.status(500).json({ error: "Failed to fetch water logs" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -241,9 +196,12 @@ async function setupApp(app: express.Express) {
       });
       await waterLog.save();
       res.json({ id: waterLog._id });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving water log:", error);
-      res.status(500).json({ error: "Failed to save water log" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -252,9 +210,12 @@ async function setupApp(app: express.Express) {
       const { id } = req.params;
       await WaterLog.findByIdAndDelete(id);
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting water log:", error);
-      res.status(500).json({ error: "Failed to delete water log" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -262,9 +223,12 @@ async function setupApp(app: express.Express) {
     try {
       const meds = await Medication.find();
       res.json(meds);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching medications:", error);
-      res.status(500).json({ error: "Failed to fetch medications" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -274,9 +238,12 @@ async function setupApp(app: express.Express) {
       const medication = new Medication({ name, dosage, time });
       await medication.save();
       res.json({ id: medication._id });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error saving medication:", error);
-      res.status(500).json({ error: "Failed to save medication" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -284,14 +251,17 @@ async function setupApp(app: express.Express) {
     try {
       const { id } = req.params;
       const { taken, last_taken_date } = req.body;
-      await Medication.findByIdAndUpdate(id, { taken, last_taken_date });
+      await Medication.findByIdAndUpdate(id, { taken, last_taken_date }, {});
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error updating medication:", error);
       if (error instanceof mongoose.Error.CastError) {
         return res.status(400).json({ error: "Invalid medication ID format" });
       }
-      res.status(500).json({ error: "Failed to update medication" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -300,9 +270,12 @@ async function setupApp(app: express.Express) {
       const { id } = req.params;
       await Medication.findByIdAndDelete(id);
       res.json({ success: true });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error deleting medication:", error);
-      res.status(500).json({ error: "Failed to delete medication" });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: error.message 
+      });
     }
   });
 
@@ -351,7 +324,7 @@ async function setupApp(app: express.Express) {
         });
       }
 
-      console.log(`[${requestId}] 🤖 Calling Gemini API...`);
+      console.log(`[${requestId}] 🤖 Calling Groq API...`);
       
       // 2. AI Analysis
       const analysis = await analyzeMeal(profile as UserProfile, {
@@ -374,7 +347,7 @@ async function setupApp(app: express.Express) {
       
       // 3. Structured Error Response
       const statusCode = error.status || 500;
-      let errorMessage = "Failed to analyze meal";
+      let errorMessage = "Failed to analyze meal with Groq";
       
       if (error instanceof Error) {
         errorMessage = error.message;
@@ -403,7 +376,7 @@ async function setupApp(app: express.Express) {
   app.get("/api/recommendations", async (req, res) => {
     try {
       const profile = await Profile.findOne().sort({ _id: -1 });
-      const meals = await MealLog.find().sort({ timestamp: -1 }).limit(10);
+      const meals = await Meal.find().sort({ timestamp: -1 }).limit(10);
       
       if (!profile) {
         return res.status(400).json({ error: "Profile required for recommendations" });
@@ -411,10 +384,13 @@ async function setupApp(app: express.Express) {
 
       const recs = await getPersonalizedRecommendations(profile as UserProfile, meals);
       res.json(recs);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error fetching recommendations:", error);
       const message = error instanceof Error ? error.message : "Failed to fetch recommendations";
-      res.status(500).json({ error: message });
+      res.status(500).json({ 
+        error: "Database operation failed", 
+        message: message 
+      });
     }
   });
 
@@ -427,10 +403,13 @@ async function setupApp(app: express.Express) {
 
       const response = await chatWithNutritionist(profile as UserProfile, history, message);
       res.json({ response });
-    } catch (error) {
+    } catch (error: any) {
       console.error("Error in chat:", error);
       const message = error instanceof Error ? error.message : "Failed to process chat message";
-      res.status(500).json({ error: message });
+      res.status(500).json({ 
+        error: "AI operation failed", 
+        message: message 
+      });
     }
   });
 

@@ -9,7 +9,7 @@ async function testGemini() {
   try {
     const genAI = new GoogleGenAI({ apiKey: API_KEY });
     const response = await genAI.models.generateContent({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-flash",
       contents: [{ parts: [{ text: "Hello, say hi back." }] }],
     });
     console.log("Response:", response.text);
