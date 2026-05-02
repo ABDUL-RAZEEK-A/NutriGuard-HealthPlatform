@@ -210,45 +210,56 @@ export async function getPersonalizedRecommendations(
     });
 
     if (!response.text) {
-      throw new Error("No response text from AI");
+      console.warn("⚠️ No response text, using fallback");
+      return getFallbackRecommendations(profile);
     }
 
     let result;
     try {
-      result = JSON.parse(response.text);
+      // Clean response - strip markdown code blocks if present
+      let cleanedResponse = response.text.trim();
+      if (cleanedResponse.startsWith('```json')) {
+        cleanedResponse = cleanedResponse.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+      } else if (cleanedResponse.startsWith('```')) {
+        cleanedResponse = cleanedResponse.replace(/^```\s*/, '').replace(/\s*```$/, '');
+      }
+      result = JSON.parse(cleanedResponse);
     } catch (parseError) {
-      console.warn("⚠️ Failed to parse JSON, attempting extraction:", response.text.substring(0, 200));
-      // Try to extract array from the response text (fallback parsing)
-      const arrayMatch = response.text.match(/\[.*\]/s);
+      console.warn("⚠️ Failed to parse JSON, trying regex extraction:", parseError);
+      const arrayMatch = response.text.match(/\[[\s\S]*?\]/);
       if (arrayMatch) {
-        result = JSON.parse(arrayMatch[0]);
+        try {
+          result = JSON.parse(arrayMatch[0]);
+        } catch {
+          console.warn("Regex extraction failed, using fallback");
+          return getFallbackRecommendations(profile);
+        }
       } else {
-        throw new Error("Could not extract JSON array from response");
+        return getFallbackRecommendations(profile);
       }
     }
 
-    // Validate result is an array
     if (!Array.isArray(result)) {
-      console.warn("⚠️ AI response is not an array, converting:", result);
-      result = [result];
+      console.warn("⚠️ Response is not an array, using fallback");
+      return getFallbackRecommendations(profile);
     }
 
-    // Validate each item has required fields
     const validResult = result.filter((item: any) => 
       item && typeof item.title === 'string' && 
       typeof item.description === 'string' && 
       typeof item.reason === 'string'
     );
 
+    if (validResult.length === 0) {
+      console.warn("⚠️ No valid items after filtering, using fallback");
+      return getFallbackRecommendations(profile);
+    }
+
     console.log("✅ Recommendations fetched:", validResult.length, "items");
     return validResult;
   } catch (error: any) {
-    console.error("❌ Failed to fetch recommendations:", error);
-    
-    // Return fallback recommendations based on conditions
-    const fallbackRecs = getFallbackRecommendations(profile);
-    console.log("🔁 Using fallback recommendations");
-    return fallbackRecs;
+    console.error("❌ Gemini API error:", error);
+    return getFallbackRecommendations(profile);
   }
 }
 
@@ -302,25 +313,7 @@ function getFallbackRecommendations(profile: UserProfile): Recommendation[] {
     });
   }
 
-  return base.slice(0, 5);
-}
-
-    const result = JSON.parse(response.text);
-    console.log("✅ Recommendations fetched successfully:", result.length, "items");
-    return result;
-  } catch (error: any) {
-    console.error("❌ Failed to fetch recommendations:", error);
-    throw error;
-  }
-}
-
-    const result = JSON.parse(response.text);
-    console.log("✅ Recommendations fetched successfully:", result.length, "items");
-    return result;
-  } catch (error: any) {
-    console.error("❌ Failed to fetch recommendations:", error);
-    throw error;
-  }
+return base.slice(0, 5);
 }
 
 export async function chatWithNutritionist(

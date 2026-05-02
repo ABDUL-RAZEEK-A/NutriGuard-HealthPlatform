@@ -333,10 +333,6 @@ export default function App() {
 
   const fetchRecommendations = async () => {
     console.log("🔍 fetchRecommendations called");
-    console.log("Profile exists:", !!profile);
-    console.log("Meals count:", meals.length);
-    console.log("Meals data:", meals);
-    
     if (!profile) {
       console.log("⚠️ No profile, aborting");
       return;
@@ -350,11 +346,10 @@ export default function App() {
     try {
       console.log("📡 Calling getPersonalizedRecommendations...");
       const recs = await getPersonalizedRecommendations(profile, meals);
-      console.log("✅ Received recommendations:", recs);
+      console.log("✅ Setting recommendations:", recs.length, "items");
       setRecommendations(recs);
     } catch (err) {
-      console.error("❌ Failed to fetch recommendations:", err);
-      toast.error("Could not generate personalized tips right now. Check console for details.");
+      console.error("❌ Unexpected error in fetchRecommendations:", err);
     } finally {
       setIsFetchingRecs(false);
     }
@@ -502,8 +497,10 @@ export default function App() {
   }, [medications, notificationPermission]);
 
   const calculateBMI = (w: number, h: number) => {
-    const heightInMeters = h / 100;
-    return parseFloat((w / (heightInMeters * heightInMeters)).toFixed(1));
+    if (!w || !h || w <= 0 || h <= 0) return 0;
+    const heightInMeters = h > 3 ? h / 100 : h;
+    const bmi = w / (heightInMeters * heightInMeters);
+    return parseFloat(bmi.toFixed(1));
   };
 
   const getBMICategory = (bmi: number) => {
@@ -518,6 +515,13 @@ export default function App() {
     setIsLoading(true);
     const w = parseFloat(weight);
     const h = parseFloat(height);
+
+    if (isNaN(w) || isNaN(h) || w <= 0 || h <= 0) {
+      toast.error('Please enter a valid weight and height.');
+      setIsLoading(false);
+      return;
+    }
+
     const bmi = calculateBMI(w, h);
     
     const newProfile = {
