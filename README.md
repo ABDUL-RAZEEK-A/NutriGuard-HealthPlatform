@@ -1083,7 +1083,7 @@ const alerts = safeArray(meal.alerts);
 **Solution:**
 ```bash
 # 1. Check MongoDB Atlas connection string in server.ts
-# Line 15: const MONGODB_URI = "mongodb+srv://NUTRIGUARD:NUTRIGUARD@ng.oaiszkn.mongodb.net/?appName=NG";
+# Line 15: const MONGODB_URI = "your-mongodb-uri-here";
 
 # 2. Verify network connectivity to MongoDB Atlas
 # Check if you can reach the cluster (firewall/ISP restrictions)
