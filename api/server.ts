@@ -4,37 +4,40 @@ import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "./src/services/geminiService.ts";
-import type { UserProfile } from "./src/services/geminiService.ts";
+import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "../src/services/geminiService.ts";
+import type { UserProfile } from "../src/services/geminiService.ts";
 
 dotenv.config();
 console.log("🔐 Loaded environment variables");
 console.log("🚀 Starting NutriGuard Server...");
 
 // MongoDB connection
-const MONGODB_URI = "mongodb+srv://NUTRIGUARD:NUTRIGUARD@ng.oaiszkn.mongodb.net/?appName=NG";
+const MONGODB_URI = process.env.MONGODB_URI;
 
-// ObjectId validation middleware
-function validateObjectId(paramName: string) {
-  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
-    const id = req.params[paramName];
-    if (!id || typeof id !== 'string' || id.trim() === '') {
-      return res.status(400).json({ error: `${paramName} is required and must be a non-empty string` });
-    }
-    if (!Types.ObjectId.isValid(id)) {
-      return res.status(400).json({ error: `${paramName} must be a valid MongoDB ObjectId (24-character hex string)` });
-    }
-    next();
-  };
+if (!MONGODB_URI) {
+  console.error("❌ MONGODB_URI not found in environment variables. Database connection will fail.");
 }
 
+let isConnected = false;
 async function connectToMongoDB() {
+  if (isConnected) return;
+  if (!MONGODB_URI) {
+    console.error("❌ MONGODB_URI is missing. Cannot connect to database.");
+    return;
+  }
   try {
-    await mongoose.connect(MONGODB_URI);
+    await mongoose.connect(MONGODB_URI, {
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
+    isConnected = true;
     console.log("📊 Connected to MongoDB");
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
-    process.exit(1);
+    // Don't exit in serverless, just log and let the next request try
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+      process.exit(1);
+    }
   }
 }
 
@@ -82,10 +85,32 @@ const Medication = mongoose.model('Medication', medicationSchema);
 
 console.log("📋 Database models initialized");
 
-async function startServer() {
-  await connectToMongoDB();
-  const app = express();
-  const PORT = 3000;
+const app = express();
+
+// Database connection middleware for serverless
+app.use(async (req, res, next) => {
+  if (!isConnected && req.path.startsWith('/api')) {
+    await connectToMongoDB();
+  }
+  next();
+});
+
+// ObjectId validation middleware
+function validateObjectId(paramName: string) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const id = req.params[paramName];
+    if (!id || typeof id !== 'string' || id.trim() === '') {
+      return res.status(400).json({ error: `${paramName} is required and must be a non-empty string` });
+    }
+    if (!Types.ObjectId.isValid(id)) {
+      return res.status(400).json({ error: `${paramName} must be a valid MongoDB ObjectId (24-character hex string)` });
+    }
+    next();
+  };
+}
+
+async function setupApp(app: express.Express) {
+  const PORT = process.env.PORT || 3000;
 
   console.log("-----------------------------------------");
   console.log("🛡️  NutriGuard Server: Security Fixes Active");
@@ -422,14 +447,20 @@ async function startServer() {
   }
 
   console.log(`🚀 Starting server on port ${PORT}...`);
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`🎉 NutriGuard server is running!`);
-    console.log(`🌐 Access your app at: http://localhost:${PORT}`);
-    console.log(`📱 Mobile access: http://192.168.1.x:${PORT} (replace with your IP)`);
-    console.log(`🔄 Hot reload: Enabled in development mode`);
-    console.log(`📊 API endpoints: /api/*`);
-    console.log(`💾 Database: MongoDB Atlas (NutriGuard cluster)`);
-  });
+  if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+    app.listen(PORT, "0.0.0.0", () => {
+      console.log(`🎉 NutriGuard server is running!`);
+      console.log(`🌐 Access your app at: http://localhost:${PORT}`);
+      console.log(`📱 Mobile access: http://192.168.1.x:${PORT} (replace with your IP)`);
+      console.log(`🔄 Hot reload: Enabled in development mode`);
+      console.log(`📊 API endpoints: /api/*`);
+      console.log(`💾 Database: MongoDB Atlas (NutriGuard cluster)`);
+    });
+  }
 }
 
-startServer();
+// Initial setup
+setupApp(app);
+
+// Export the app for Vercel
+export default app;
