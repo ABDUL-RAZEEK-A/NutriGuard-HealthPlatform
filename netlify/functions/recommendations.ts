@@ -13,7 +13,7 @@ export const handler: Handler = async (event) => {
       }
 
       const pastMeals = await Meal.find().sort({ timestamp: -1 }).limit(10);
-      const recommendations = await getPersonalizedRecommendations(profile, pastMeals);
+      const recommendations = await getPersonalizedRecommendations(profile as any, pastMeals);
       
       return {
         statusCode: 200,

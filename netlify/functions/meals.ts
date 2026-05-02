@@ -23,7 +23,7 @@ export const handler: Handler = async (event) => {
         return { statusCode: 400, body: JSON.stringify({ error: "Please complete your profile first" }) };
       }
 
-      const analysis = await analyzeMeal(profile, { text, imageBase64: image, mimeType });
+      const analysis = await analyzeMeal(profile as any, { text, imageBase64: image, mimeType });
 
       const meal = new Meal({
         meal_items: analysis.recognized_meal_items,

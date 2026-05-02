@@ -14,7 +14,7 @@ export const handler: Handler = async (event) => {
         return { statusCode: 400, body: JSON.stringify({ error: "Profile required for chat" }) };
       }
 
-      const response = await chatWithNutritionist(profile, history, message);
+      const response = await chatWithNutritionist(profile as any, history, message);
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json" },

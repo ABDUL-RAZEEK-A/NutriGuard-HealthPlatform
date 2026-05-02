@@ -23,6 +23,44 @@ export async function connectToMongoDB() {
   }
 }
 
+// Define interfaces
+export interface IProfile {
+  name: string;
+  age: number;
+  weight: number;
+  height: number;
+  bmi: number;
+  conditions: string;
+  goals: string;
+  updatedAt: Date;
+}
+
+export interface IMeal {
+  timestamp: Date;
+  meal_items: Array<{ item: string; estimated_portion: string }>;
+  calories: number;
+  proteins: number;
+  carbs: number;
+  fats: number;
+  expense: number;
+  alerts: string[];
+  insights: string[];
+}
+
+export interface IWaterLog {
+  timestamp: Date;
+  amount: number;
+}
+
+export interface IMedication {
+  name: string;
+  dosage: string;
+  frequency: string;
+  timing: string;
+  taken: boolean;
+  lastTakenDate?: Date;
+}
+
 // Define schemas
 const profileSchema = new mongoose.Schema({
   name: { type: String, required: true },
@@ -65,7 +103,7 @@ const medicationSchema = new mongoose.Schema({
 });
 
 // Create models
-export const Profile = mongoose.models.Profile || mongoose.model("Profile", profileSchema);
-export const Meal = mongoose.models.Meal || mongoose.model("Meal", mealSchema);
-export const WaterLog = mongoose.models.WaterLog || mongoose.model("WaterLog", waterLogSchema);
-export const Medication = mongoose.models.Medication || mongoose.model("Medication", medicationSchema);
+export const Profile = mongoose.models.Profile || mongoose.model<IProfile>("Profile", profileSchema);
+export const Meal = mongoose.models.Meal || mongoose.model<IMeal>("Meal", mealSchema);
+export const WaterLog = mongoose.models.WaterLog || mongoose.model<IWaterLog>("WaterLog", waterLogSchema);
+export const Medication = mongoose.models.Medication || mongoose.model<IMedication>("Medication", medicationSchema);
