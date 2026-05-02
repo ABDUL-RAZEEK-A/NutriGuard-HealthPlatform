@@ -110,7 +110,7 @@ function validateObjectId(paramName: string) {
 }
 
 async function setupApp(app: express.Express) {
-  const PORT = process.env.PORT || 3000;
+  const PORT = Number(process.env.PORT) || 3000;
 
   console.log("-----------------------------------------");
   console.log("🛡️  NutriGuard Server: Security Fixes Active");
