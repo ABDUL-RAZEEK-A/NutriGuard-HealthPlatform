@@ -47,7 +47,7 @@ export const handler: Handler = async (event) => {
     if (event.httpMethod === "DELETE") {
       const { id } = event.queryStringParameters || {};
       if (!id) return { statusCode: 400, body: "ID required" };
-      await Meal.findByIdAndDelete(id);
+      await (Meal as any).deleteOne({ _id: id });
       return { statusCode: 200, body: JSON.stringify({ success: true }) };
     }
 

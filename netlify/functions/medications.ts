@@ -29,7 +29,7 @@ export const handler: Handler = async (event) => {
       const { id } = event.queryStringParameters || {};
       if (!id) return { statusCode: 400, body: "ID required" };
       const data = JSON.parse(event.body || "{}");
-      const med = await Medication.findByIdAndUpdate(id, data, { new: true });
+      const med = await (Medication as any).findOneAndUpdate({ _id: id }, data, { new: true });
       return {
         statusCode: 200,
         headers: { "Content-Type": "application/json" },
@@ -40,7 +40,7 @@ export const handler: Handler = async (event) => {
     if (event.httpMethod === "DELETE") {
       const { id } = event.queryStringParameters || {};
       if (!id) return { statusCode: 400, body: "ID required" };
-      await Medication.findByIdAndDelete(id);
+      await (Medication as any).deleteOne({ _id: id });
       return { statusCode: 200, body: JSON.stringify({ success: true }) };
     }
 
