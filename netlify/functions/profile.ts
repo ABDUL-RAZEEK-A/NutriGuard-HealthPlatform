@@ -26,7 +26,7 @@ export const handler: Handler = async (event) => {
         };
       }
 
-      const profile = await Profile.findOneAndUpdate(
+      const profile = await (Profile as any).findOneAndUpdate(
         {},
         { ...data, updatedAt: new Date() },
         { upsert: true, new: true }
