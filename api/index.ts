@@ -34,7 +34,7 @@ async function connectToMongoDB() {
   } catch (err) {
     console.error("❌ MongoDB connection error:", err);
     // Don't exit in serverless, just log and let the next request try
-    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL) {
+    if (process.env.NODE_ENV !== 'production' && !process.env.VERCEL && !process.env.NETLIFY) {
       process.exit(1);
     }
   }
@@ -459,7 +459,7 @@ async function setupApp(app: express.Express) {
   }
 
   console.log(`🚀 Starting server on port ${PORT}...`);
-  if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL && !process.env.NETLIFY) {
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`🎉 NutriGuard server is running!`);
       console.log(`🌐 Access your app at: http://localhost:${PORT}`);
