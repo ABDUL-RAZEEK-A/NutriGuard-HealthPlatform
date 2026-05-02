@@ -4,8 +4,8 @@ import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "../src/services/geminiService.ts";
-import type { UserProfile } from "../src/services/geminiService.ts";
+import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "../src/services/geminiService";
+import type { UserProfile } from "../src/services/geminiService";
 
 dotenv.config();
 console.log("🔐 Loaded environment variables");
@@ -125,6 +125,18 @@ async function setupApp(app: express.Express) {
   console.log("🔗 Registering API routes...");
 
   // API Routes
+  app.get("/api/health", (req, res) => {
+    res.json({ 
+      status: "ok", 
+      database: isConnected ? "connected" : "disconnected",
+      env: {
+        has_mongodb_uri: !!process.env.MONGODB_URI,
+        has_gemini_key: !!process.env.GEMINI_API_KEY,
+        node_env: process.env.NODE_ENV
+      }
+    });
+  });
+
   app.get("/api/profile", async (req, res) => {
     try {
       const profile = await Profile.findOne().sort({ _id: -1 });
