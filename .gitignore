@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+build/
+dist/
+
+# Coverage reports
+coverage/
+
+# Local environment files
+.env*
+!.env.example
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE/editor directories
+.vscode/
+.idea/
+
+# Local databases and generated files
+nutrition.db
+*.sqlite
+*.sqlite3
+
+# Test output
+test-results/
+
+# Vite cache
+.vite/

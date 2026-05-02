@@ -1,0 +1,7 @@
+{
+  "name": "Final NutriGuard: Disease-Aware Smart Nutrition",
+  "description": "A personalized nutrition assistant that analyzes meals based on your health conditions (Diabetes, Hypertension, Obesity) using AI.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
