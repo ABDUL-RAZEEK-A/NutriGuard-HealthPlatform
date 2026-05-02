@@ -4,7 +4,7 @@ import mongoose, { Types } from "mongoose";
 import path from "path";
 import fs from "fs";
 import dotenv from "dotenv";
-import { analyzeMeal } from "./src/services/geminiService.ts";
+import { analyzeMeal, getPersonalizedRecommendations, chatWithNutritionist } from "./src/services/geminiService.ts";
 import type { UserProfile } from "./src/services/geminiService.ts";
 
 dotenv.config();
@@ -86,6 +86,11 @@ async function startServer() {
   await connectToMongoDB();
   const app = express();
   const PORT = 3000;
+
+  console.log("-----------------------------------------");
+  console.log("🛡️  NutriGuard Server: Security Fixes Active");
+  console.log("📊 Enhanced Error Diagnostics: Enabled");
+  console.log("-----------------------------------------");
 
   console.log("📝 Configuring middleware...");
   app.use(express.json({ limit: '50mb' }));
@@ -266,25 +271,130 @@ async function startServer() {
   });
 
   app.post("/api/analyze-meal", async (req, res) => {
+    const requestId = Math.random().toString(36).substring(7);
+    console.log(`[${new Date().toISOString()}] [${requestId}] 🥗 Processing /api/analyze-meal request`, req.body);
+    
     try {
-      const { profile, text, imageBase64, mimeType } = req.body;
-      if (!profile || !profile.name) {
-        return res.status(400).json({ error: "Profile information is required for AI analysis." });
-      }
-      if (!text && !imageBase64) {
-        return res.status(400).json({ error: "Please provide meal text or an image for analysis." });
+      const { profile, text, imageBase64, mimeType, expense } = req.body;
+
+      // 1. Input Validation
+      if (!profile || typeof profile !== 'object') {
+        console.warn(`[${requestId}] ⚠️ Validation failed: Missing profile`);
+        return res.status(400).json({ 
+          error: "Profile information is required for AI analysis.",
+          code: "MISSING_PROFILE"
+        });
       }
 
+      // Validate expense if provided
+      let userExpense: number | undefined = undefined;
+      if (expense !== undefined && expense !== null && expense !== '') {
+        userExpense = parseFloat(expense);
+        if (isNaN(userExpense) || userExpense < 0) {
+          console.warn(`[${requestId}] ⚠️ Validation failed: Invalid expense value`);
+          return res.status(400).json({
+            error: "Expense must be a non-negative number.",
+            code: "INVALID_EXPENSE"
+          });
+        }
+      }
+
+      if (!profile.name || !profile.conditions) {
+        console.warn(`[${requestId}] ⚠️ Validation failed: Incomplete profile`);
+        return res.status(400).json({ 
+          error: "Profile must include name and health conditions.",
+          code: "INCOMPLETE_PROFILE"
+        });
+      }
+
+      if (!text && !imageBase64) {
+        console.warn(`[${requestId}] ⚠️ Validation failed: No meal data`);
+        return res.status(400).json({ 
+          error: "Please provide meal description or an image for analysis.",
+          code: "NO_MEAL_DATA"
+        });
+      }
+
+      console.log(`[${requestId}] 🤖 Calling Gemini API...`);
+      
+      // 2. AI Analysis
       const analysis = await analyzeMeal(profile as UserProfile, {
         text,
         imageBase64,
         mimeType,
       });
 
+      // Override AI expense if user provided one
+      if (userExpense !== undefined) {
+        console.log(`[${requestId}] 💰 Using user-provided expense: ₹${userExpense}`);
+        analysis.estimated_expense = userExpense;
+      }
+
+      console.log(`[${requestId}] ✅ Analysis successful`);
       res.json(analysis);
+
+    } catch (error: any) {
+      console.error(`[${requestId}] ❌ Error analyzing meal:`, error);
+      
+      // 3. Structured Error Response
+      const statusCode = error.status || 500;
+      let errorMessage = "Failed to analyze meal";
+      
+      if (error instanceof Error) {
+        errorMessage = error.message;
+      } else if (typeof error === 'string') {
+        errorMessage = error;
+      } else {
+        errorMessage = JSON.stringify(error);
+      }
+      
+      // Handle specific AI error codes
+      if (errorMessage.includes("quota") || errorMessage.includes("limit")) {
+        return res.status(503).json({ 
+          error: "AI Service temporarily unavailable (Quota Exceeded). Please try again later.",
+          code: "QUOTA_EXCEEDED"
+        });
+      }
+
+      res.status(statusCode).json({ 
+        error: errorMessage,
+        code: error.code || "INTERNAL_SERVER_ERROR",
+        details: error.stack || JSON.stringify(error, null, 2)
+      });
+    }
+  });
+
+  app.get("/api/recommendations", async (req, res) => {
+    try {
+      const profile = await Profile.findOne().sort({ _id: -1 });
+      const meals = await MealLog.find().sort({ timestamp: -1 }).limit(10);
+      
+      if (!profile) {
+        return res.status(400).json({ error: "Profile required for recommendations" });
+      }
+
+      const recs = await getPersonalizedRecommendations(profile as UserProfile, meals);
+      res.json(recs);
     } catch (error) {
-      console.error("Error analyzing meal:", error);
-      res.status(500).json({ error: "Failed to analyze meal" });
+      console.error("Error fetching recommendations:", error);
+      const message = error instanceof Error ? error.message : "Failed to fetch recommendations";
+      res.status(500).json({ error: message });
+    }
+  });
+
+  app.post("/api/chat", async (req, res) => {
+    try {
+      const { profile, history, message } = req.body;
+      if (!profile) {
+        return res.status(400).json({ error: "Profile required for chat" });
+      }
+
+      const response = await chatWithNutritionist(profile as UserProfile, history, message);
+      res.json({ response });
+    } catch (error) {
+      console.error("Error in chat:", error);
+      const message = error instanceof Error ? error.message : "Failed to process chat message";
+      res.status(500).json({ error: message });
     }
   });
 

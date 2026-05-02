@@ -1,15 +1,22 @@
 import { GoogleGenAI, Type } from "@google/genai";
-const GEMINI_API_KEY= "AIzaSyAFuNpls-uNwd0nSJgQsg-e42WSBUsdquY,AIzaSyAEpbPMBvho4JKfJ1Cat3fu335zDIHZW2s,AIzaSyC-_lyQDeC-4OC_HqGvP-8a1m8ioPoxzeE";
-function getApiKeys(): string[] {
-  const keys = [
-    ...(process.env.GEMINI_API_KEYS ? process.env.GEMINI_API_KEYS.split(/[,;\s]+/).map(k => k.trim()).filter(Boolean) : []),
-    ...(process.env.GEMINI_API_KEY ? [process.env.GEMINI_API_KEY.trim()] : []),
-  ].filter(Boolean);
 
-  const uniqueKeys = Array.from(new Set(keys));
+// API keys should be provided via environment variables (.env)
+function getApiKeys(): string[] {
+  // First try to get from environment variables
+  const envKeys = process.env.GEMINI_API_KEYS 
+    ? process.env.GEMINI_API_KEYS.split(/[,;\s]+/).map(k => k.trim()).filter(Boolean)
+    : [];
+  
+  const singleEnvKey = process.env.GEMINI_API_KEY 
+    ? [process.env.GEMINI_API_KEY.trim()] 
+    : [];
+
+  const uniqueKeys = Array.from(new Set([...envKeys, ...singleEnvKey]));
+  
   if (uniqueKeys.length === 0) {
-    throw new Error("GEMINI_API_KEY or GEMINI_API_KEYS is not set. Please add your Gemini API key(s) to the .env file.");
+    throw new Error("GEMINI_API_KEY or GEMINI_API_KEYS is not set in .env. Please add a valid Gemini API key.");
   }
+  
   return uniqueKeys;
 }
 
@@ -18,22 +25,98 @@ function getGenAI(apiKey?: string): GoogleGenAI {
   return new GoogleGenAI({ apiKey: key });
 }
 
+// Check if error is a rate limit error (429)
+function isRateLimitError(error: unknown): boolean {
+  if (error && typeof error === 'object' && 'status' in error) {
+    return (error as any).status === 429;
+  }
+  const errorStr = String(error);
+  return errorStr.includes('429') || 
+         errorStr.includes('rate limit') || 
+         errorStr.includes('RESOURCE_EXHAUSTED') ||
+         errorStr.includes('quota');
+}
+
+// Simple cache for failed models to avoid repeated attempts
+const failedModelsCache = new Map<string, { timestamp: number; error: string }>();
+const FAIL_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
+
+function isModelFailed(model: string): boolean {
+  const failed = failedModelsCache.get(model);
+  if (!failed) return false;
+  if (Date.now() - failed.timestamp > FAIL_CACHE_DURATION) {
+    failedModelsCache.delete(model);
+    return false;
+  }
+  return true;
+}
+
 async function generateContentWithFallback(params: any) {
   const apiKeys = getApiKeys();
   let lastError: unknown;
+  let rateLimitedKeys: string[] = [];
 
   for (const apiKey of apiKeys) {
+    if (rateLimitedKeys.includes(apiKey)) continue;
+    
     try {
       const genAI = getGenAI(apiKey);
-      const response = await genAI.models.generateContent(params);
-      return response;
+      const requestedModel = params.model;
+      let modelToUse = requestedModel;
+      
+      // Map futuristic model names to current ones
+      if (requestedModel.includes('gemini-3') || requestedModel.includes('2.0')) {
+        modelToUse = 'gemini-2.0-flash';
+      }
+      
+      const tryModels = [modelToUse, 'gemini-flash-latest', 'gemini-1.5-pro'];
+      
+      for (let i = 0; i < tryModels.length; i++) {
+        const currentModel = tryModels[i];
+        
+        if (isModelFailed(currentModel) && i < tryModels.length - 1) {
+          console.log(`ℹ️ Skipping known failed model ${currentModel}, trying next...`);
+          continue;
+        }
+
+        try {
+          const response = await genAI.models.generateContent({ ...params, model: currentModel });
+          return response;
+        } catch (e: any) {
+          const errorMessage = e.message || String(e);
+          console.warn(`⚠️ Model ${currentModel} failed: ${errorMessage.substring(0, 100)}...`);
+          
+          // Cache failure if it's a quota or rate limit issue
+          if (errorMessage.includes('429') || errorMessage.includes('quota') || errorMessage.includes('limit')) {
+            failedModelsCache.set(currentModel, { timestamp: Date.now(), error: errorMessage });
+          }
+
+          if (i === tryModels.length - 1) {
+            throw e; // Last model failed
+          }
+          console.log(`🔄 Attempting fallback to ${tryModels[i+1]}...`);
+        }
+      }
     } catch (error) {
       lastError = error;
-      console.warn(`Gemini API key fallback: key failed, trying next key.`, { apiKey, error });
+      if (isRateLimitError(error)) {
+        rateLimitedKeys.push(apiKey);
+        continue;
+      }
+      console.warn(`❌ Gemini API key failed, trying next key.`, { error });
     }
   }
 
-  throw new Error(`All Gemini API keys failed. Last error: ${lastError}`);
+  if (rateLimitedKeys.length === apiKeys.length && apiKeys.length > 0) {
+    throw new Error(`API quota exceeded or rate limit reached on all available keys. Please check your Google AI Studio plan.`);
+  }
+  
+  const errorMessage = lastError instanceof Error ? lastError.message : String(lastError);
+  if (errorMessage.includes('quota') || errorMessage.includes('limit')) {
+    throw new Error(`Gemini API Quota Exceeded. Please provide a fresh API key in .env.`);
+  }
+
+  throw new Error(`Gemini API error: ${errorMessage}`);
 }
 
 export interface UserProfile {
@@ -116,6 +199,34 @@ export interface Recommendation {
   reason: string;
 }
 
+function cleanJsonResponse(text: string): string {
+  let cleaned = text.trim();
+  // Remove markdown code blocks if present
+  if (cleaned.startsWith('```')) {
+    cleaned = cleaned.replace(/^```(?:json)?\s*/, '').replace(/\s*```$/, '');
+  }
+  return cleaned;
+}
+
+function extractJson(text: string): any {
+  const cleaned = cleanJsonResponse(text);
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) {
+    console.warn("⚠️ Initial JSON parse failed, trying regex extraction");
+    // Try to find anything between { } or [ ]
+    const match = cleaned.match(/[\{\[]\s*[\s\S]*[\}\]]/);
+    if (match) {
+      try {
+        return JSON.parse(match[0]);
+      } catch (e2) {
+        console.error("❌ Regex JSON extraction failed");
+      }
+    }
+    throw new Error(`Failed to parse AI response as JSON. Raw response: ${text.substring(0, 200)}...`);
+  }
+}
+
 export async function analyzeMeal(
   profile: UserProfile,
   mealData: { text?: string; imageBase64?: string; mimeType?: string }
@@ -138,7 +249,7 @@ export async function analyzeMeal(
   }
 
   const response = await generateContentWithFallback({
-    model: "gemini-3-flash-preview",
+    model: "gemini-2.0-flash",
     contents: [{ parts }],
     config: {
       systemInstruction: SYSTEM_INSTRUCTION,
@@ -151,7 +262,12 @@ export async function analyzeMeal(
     throw new Error("No response from AI");
   }
 
-  return JSON.parse(response.text);
+  try {
+    return extractJson(response.text);
+  } catch (error) {
+    console.error("Failed to parse meal analysis:", error);
+    throw error;
+  }
 }
 
 export async function getPersonalizedRecommendations(
@@ -189,7 +305,7 @@ export async function getPersonalizedRecommendations(
 
   try {
     const response = await generateContentWithFallback({
-      model: "gemini-1.5-flash",
+      model: "gemini-2.0-flash",
       contents: [{ parts: [{ text: prompt }] }],
       config: {
         responseMimeType: "application/json",
@@ -321,17 +437,38 @@ export async function chatWithNutritionist(
   history: { role: 'user' | 'model'; parts: { text: string }[] }[],
   message: string
 ) {
-  const chat = getGenAI().chats.create({
-    model: "gemini-3-flash-preview",
-    config: {
-      systemInstruction: `You are a helpful nutritionist chatbot for the NutriGuard app. 
-      The user has the following profile: ${JSON.stringify(profile)}.
-      Answer their questions about nutrition, disease management (Diabetes, Hypertension, Obesity), and meal planning.
-      IMPORTANT: Keep your answers very concise, strictly under 50 words. Be practical and evidence-based.`,
-    },
-    history: history,
-  });
+  // Build conversation history in the format expected by generateContent
+  const systemInstruction = `You are a helpful nutritionist chatbot for the NutriGuard app. 
+  The user has the following profile: ${JSON.stringify(profile)}.
+  Answer their questions about nutrition, disease management (Diabetes, Hypertension, Obesity), and meal planning.
+  IMPORTANT: Keep your answers very concise, strictly under 50 words. Be practical and evidence-based.`;
 
-  const response = await chat.sendMessage({ message });
-  return response.text;
+  try {
+    // Convert history to contents format for generateContent
+    const contents = [...history.map(h => ({
+      role: h.role,
+      parts: h.parts
+    })), {
+      role: 'user' as const,
+      parts: [{ text: message }]
+    }];
+
+    // Use fallback mechanism instead of direct chat
+    const response = await generateContentWithFallback({
+      model: "gemini-2.0-flash",
+      contents,
+      config: {
+        systemInstruction,
+      },
+    });
+
+    if (!response.text) {
+      throw new Error("Empty response from AI");
+    }
+
+    return response.text;
+  } catch (error) {
+    console.error("❌ Chat error:", error);
+    throw error;
+  }
 }

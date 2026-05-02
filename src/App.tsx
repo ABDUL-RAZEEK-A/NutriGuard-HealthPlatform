@@ -58,7 +58,6 @@ import {
   Line
 } from 'recharts';
 import { motion, AnimatePresence } from 'motion/react';
-import { chatWithNutritionist, getPersonalizedRecommendations } from './services/geminiService';
 import type { UserProfile, MealAnalysis, Recommendation } from './services/geminiService';
 import { cn } from './lib/utils';
 import jsPDF from 'jspdf';
@@ -215,6 +214,8 @@ export default function App() {
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [isChatLoading, setIsChatLoading] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
+  const lastRecsFetchRef = useRef<number>(0);
+  const isFetchingRef = useRef<boolean>(false);
 
   // Calendar State
   const [currentMonth, setCurrentMonth] = useState(new Date());
@@ -332,26 +333,26 @@ export default function App() {
   };
 
   const fetchRecommendations = async () => {
-    console.log("🔍 fetchRecommendations called");
-    if (!profile) {
-      console.log("⚠️ No profile, aborting");
-      return;
-    }
-    if (meals.length === 0) {
-      console.log("⚠️ No meals, aborting");
-      return;
-    }
+    if (!profile || meals.length === 0 || isFetchingRef.current) return;
+    
+    // Throttle requests to once every 5 seconds
+    const now = Date.now();
+    if (now - lastRecsFetchRef.current < 5000) return;
     
     setIsFetchingRecs(true);
+    isFetchingRef.current = true;
+    lastRecsFetchRef.current = now;
+    
     try {
-      console.log("📡 Calling getPersonalizedRecommendations...");
-      const recs = await getPersonalizedRecommendations(profile, meals);
-      console.log("✅ Setting recommendations:", recs.length, "items");
+      const res = await fetch('/api/recommendations');
+      if (!res.ok) throw new Error("Failed to load recommendations");
+      const recs = await res.json();
       setRecommendations(recs);
     } catch (err) {
-      console.error("❌ Unexpected error in fetchRecommendations:", err);
+      console.error("❌ Failed to fetch recommendations:", err);
     } finally {
       setIsFetchingRecs(false);
+      isFetchingRef.current = false;
     }
   };
 
@@ -570,6 +571,11 @@ export default function App() {
       return;
     }
 
+    if (!mealText && !mealImage) {
+      toast.error("Please provide a description or an image of your meal.");
+      return;
+    }
+
     setIsAnalyzing(true);
     try {
       const base64 = mealImage ? mealImage.split(',')[1] : undefined;
@@ -583,22 +589,33 @@ export default function App() {
           text: mealText,
           imageBase64: base64,
           mimeType,
+          expense: expenseInput
         }),
       });
 
+      const data = await res.json().catch(() => ({ error: 'Server returned an invalid response' }));
+
       if (!res.ok) {
-        const errorData = await res.json().catch(() => null);
-        const message = errorData?.error || 'AI analysis failed. Please try again.';
-        throw new Error(message);
+        console.error("Analysis failed details:", data);
+        const errorMessage = data.error || 'AI analysis failed. Please try again.';
+        
+        // Context-aware toast messages
+        if (res.status === 400) {
+          toast.error(`Invalid Request: ${errorMessage}`);
+        } else if (res.status === 503) {
+          toast.error("AI service is busy (Quota Exceeded). Please wait a moment and try again.");
+        } else {
+          toast.error(errorMessage);
+        }
+        return;
       }
 
-      const result: MealAnalysis & { estimated_expense: number } = await res.json();
-      setAnalysisResult(result);
-      setExpenseInput(result.estimated_expense.toString());
+      setAnalysisResult(data);
+      setExpenseInput(data.estimated_expense?.toString() || "0");
       toast.success("Meal analyzed successfully!");
     } catch (err) {
-      console.error("Analysis failed", err);
-      toast.error("Failed to analyze meal. Please try again.");
+      console.error("Network or unexpected error during analysis:", err);
+      toast.error("Connection error. Please check if the server is running.");
     } finally {
       setIsAnalyzing(false);
     }
@@ -690,11 +707,20 @@ export default function App() {
     setIsChatLoading(true);
 
     try {
-      const response = await chatWithNutritionist(profile, chatMessages, chatInput);
-      if (!response) {
-        throw new Error("No response from nutritionist");
-      }
-      const modelMessage: ChatMessage = { role: 'model', parts: [{ text: response }] };
+      const res = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          profile,
+          history: chatMessages,
+          message: chatInput
+        })
+      });
+
+      if (!res.ok) throw new Error("Chat failed");
+      const data = await res.json();
+      
+      const modelMessage: ChatMessage = { role: 'model', parts: [{ text: data.response }] };
       setChatMessages(prev => [...prev, modelMessage]);
     } catch (err) {
       console.error("Chat failed", err);
@@ -1312,7 +1338,7 @@ export default function App() {
                       </div>
                       <div className="flex-1 min-h-[200px]">
                         {chartData.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={200}>
+                          <ResponsiveContainer width="100%" height={250}>
                             <BarChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                               <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
@@ -1343,7 +1369,7 @@ export default function App() {
                       </div>
                       <div className="flex-1 min-h-[200px]">
                         {chartData.length > 0 ? (
-                          <ResponsiveContainer width="100%" height="100%" minWidth={300} minHeight={200}>
+                          <ResponsiveContainer width="100%" height={250}>
                             <LineChart data={chartData}>
                               <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
                               <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{ fontSize: 10, fill: '#94a3b8' }} />
@@ -1557,7 +1583,22 @@ export default function App() {
                     />
                   </div>
 
-<button
+                  <div className="space-y-2">
+                    <label className="text-sm font-bold text-zinc-700 flex items-center gap-2">
+                      <DollarSign size={16} className="text-emerald-500" />
+                      Expense (₹)
+                    </label>
+                    <input
+                      type="number"
+                      value={expenseInput}
+                      onChange={(e) => setExpenseInput(e.target.value)}
+                      placeholder="Enter actual cost of the meal"
+                      className="w-full bg-zinc-50 border border-black/5 rounded-2xl p-4 focus:ring-2 focus:ring-emerald-500 outline-none transition-all"
+                    />
+                    <p className="text-[10px] text-zinc-400 italic">Optional: Leave blank for AI estimation.</p>
+                  </div>
+
+                  <button
                     onClick={handleAnalyzeMeal}
                     disabled={isAnalyzing}
                     className="w-full bg-emerald-500 text-white py-4 rounded-2xl font-bold text-lg hover:bg-emerald-600 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
@@ -1618,7 +1659,7 @@ export default function App() {
                       <div className="flex flex-col items-center justify-center">
                         <div className="w-full h-48 min-h-[192px]">
                           {macroData.length > 0 ? (
-                            <ResponsiveContainer width="100%" height="100%" minWidth={200} minHeight={192}>
+                            <ResponsiveContainer width="100%" aspect={2}>
                               <PieChart>
                                 <Pie
                                   data={macroData}
@@ -1657,7 +1698,7 @@ export default function App() {
 
                     <div className="mt-8 space-y-4">
                       <div className="p-4 bg-emerald-50 rounded-2xl border border-emerald-100">
-                        <label className="text-sm font-bold text-emerald-800 block mb-2">Confirm Meal Expense (₹)</label>
+                        <label className="text-sm font-bold text-emerald-800 block mb-2">Meal Expense (₹)</label>
                         <div className="relative">
                           <div className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-600 font-bold">₹</div>
                           <input
@@ -1668,7 +1709,9 @@ export default function App() {
                             placeholder="Enter amount"
                           />
                         </div>
-                        <p className="text-[10px] text-emerald-600 mt-1 font-medium italic">AI estimated this based on your meal items.</p>
+                        <p className="text-[10px] text-emerald-600 mt-1 font-medium italic">
+                          {parseFloat(expenseInput) > 0 ? "You specified this amount." : "AI estimated this based on your meal items."}
+                        </p>
                       </div>
 
                       {analysisResult.disease_rule_alerts.length > 0 && (
@@ -1834,15 +1877,42 @@ export default function App() {
                   </div>
 
                   <div className="space-y-2">
-                    <label className="text-sm font-bold text-zinc-700">Height (cm)</label>
+                    <div className="flex justify-between items-center">
+                      <label className="text-sm font-bold text-zinc-700">Height (cm)</label>
+                      <span className="text-[10px] text-zinc-400">Supports meters (e.g. 1.7) too</span>
+                    </div>
                     <input
                       type="number"
                       required
                       value={height}
                       onChange={(e) => setHeight(e.target.value)}
+                      placeholder="e.g. 170"
                       className="w-full bg-zinc-50 border border-black/5 rounded-2xl p-4 focus:ring-2 focus:ring-emerald-500 outline-none"
                     />
                   </div>
+
+                  {/* Live BMI Preview */}
+                  {parseFloat(weight) > 0 && parseFloat(height) > 0 && (
+                    <div className={cn("p-4 rounded-2xl border flex items-center justify-between", getBMICategory(calculateBMI(parseFloat(weight), parseFloat(height))).bg)}>
+                      <div className="flex items-center gap-3">
+                        <div className={cn("w-10 h-10 rounded-xl flex items-center justify-center", getBMICategory(calculateBMI(parseFloat(weight), parseFloat(height))).bg.replace('50', '100'))}>
+                          <Scale size={20} className={getBMICategory(calculateBMI(parseFloat(weight), parseFloat(height))).color} />
+                        </div>
+                        <div>
+                          <p className="text-[10px] font-medium text-zinc-500">Calculated BMI</p>
+                          <p className={cn("text-sm font-bold", getBMICategory(calculateBMI(parseFloat(weight), parseFloat(height))).color)}>
+                            {calculateBMI(parseFloat(weight), parseFloat(height))}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-[10px] font-medium text-zinc-500">Category</p>
+                        <p className={cn("text-xs font-bold", getBMICategory(calculateBMI(parseFloat(weight), parseFloat(height))).color)}>
+                          {getBMICategory(calculateBMI(parseFloat(weight), parseFloat(height))).label}
+                        </p>
+                      </div>
+                    </div>
+                  )}
 
                   <div className="space-y-3">
                     <label className="text-sm font-bold text-zinc-700">Health Conditions</label>
@@ -2038,8 +2108,8 @@ export default function App() {
 
                <Card className="p-3">
                  <div className="grid grid-cols-7 gap-0.5 mb-1">
-                   {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map(day => (
-                     <div key={day} className="text-center text-[8px] font-bold text-zinc-400 uppercase py-1">
+                   {['S', 'M', 'T', 'W', 'T', 'F', 'S'].map((day, idx) => (
+                     <div key={`${day}-${idx}`} className="text-center text-[8px] font-bold text-zinc-400 uppercase py-1">
                        {day}
                      </div>
                    ))}

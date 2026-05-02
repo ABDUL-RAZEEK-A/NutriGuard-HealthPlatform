@@ -978,7 +978,7 @@ const ChartComponent = React.lazy(() => import('./ChartComponent'));
 const apiKey = process.env.GEMINI_API_KEY;
 
 // ❌ DON'T: Hardcode keys
-const apiKey = "AIzaSyAFuNpls-uNwd0nSJgQsg-e42WSBUsdquY";
+const apiKey = "AIzaSy..."; // ❌ Hardcoded key example
 ```
 
 ### Password Protection
