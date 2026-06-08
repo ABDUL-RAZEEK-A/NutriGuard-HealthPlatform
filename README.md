@@ -1,9 +1,6 @@
 # NutriGuard - Smart Nutrition Application
 
 A comprehensive, AI-powered nutrition tracking and health management web application that provides personalized dietary recommendations based on disease-specific health conditions. NutriGuard uses Groq's Llama 3 models to analyze meals from images or text descriptions, calculate nutritional breakdowns, and provide actionable health insights tailored to individual medical profiles.
-
-**Live Demo:** View your app in AI Studio: https://ai.studio/apps/970dcde5-abaf-4f18-a73b-eab0300276ed
-
 ---
 
 ## 📋 Table of Contents
