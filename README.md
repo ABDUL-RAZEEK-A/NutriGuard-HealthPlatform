@@ -1,8 +1,4 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://github.com/user-attachments/assets/0aa67016-6eaf-458a-adb2-6e31a0763ed6" />
-</div>
-
-# NutriGuard - Disease-Aware Smart Nutrition Application
+# NutriGuard - Smart Nutrition Application
 
 A comprehensive, AI-powered nutrition tracking and health management web application that provides personalized dietary recommendations based on disease-specific health conditions. NutriGuard uses Groq's Llama 3 models to analyze meals from images or text descriptions, calculate nutritional breakdowns, and provide actionable health insights tailored to individual medical profiles.
 
